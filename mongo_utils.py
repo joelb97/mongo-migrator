@@ -10,7 +10,7 @@ def reset_db(uri):
         print("Reset cancelled")
         return
 
-    collectoins_to_clear = [
+    collections_to_clear = [
         "account",
         "account_customer",
         "asset",
@@ -24,7 +24,7 @@ def reset_db(uri):
         "stripe_payment_session",
     ]
 
-    for collection in collectoins_to_clear:
+    for collection in collections_to_clear:
         db[collection].delete_many({})
 
     print("Database reset")
