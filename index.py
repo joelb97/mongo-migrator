@@ -16,7 +16,7 @@ if __name__ == "__main__":
     uri = None
     if args.env == "dev":
         # DEV
-        uri = "mongodb://ec2-35-94-66-28.us-west-2.compute.amazonaws.com:27017/"
+        uri = "mongodb://ec2-35-93-191-185.us-west-2.compute.amazonaws.com:27017/"
     
     if args.env == "prod":
         # PROD

@@ -54,3 +54,24 @@ def remove_job_preferences_from_account(uri):
     db = client["mach5"]
 
     db["account"].update_many({}, {"$unset": {"job_preferences": ""}})
+
+
+def add_preferences_to_account(uri):
+    client = MongoClient(uri)
+    db = client["mach5"]
+
+    for account in db["account"].find():
+        show_splash = account.get("show_splash", True)
+
+        db["account"].update_one({"_id": account["_id"]}, {
+            "$set": {
+                "preferences": {
+                    "show_splash": show_splash,
+                    "mach5_enabled": False,
+                    "show_my_jobs_on_load": False,
+                }
+            },
+            "$unset": {"show_splash": ""}
+        })
+
+    client.close()

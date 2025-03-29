@@ -35,3 +35,13 @@ def add_submitted_at_to_jobs(uri):
     db["job"].update_many({}, {'$set': {"submitted_at": datetime.now()}})
 
     client.close()
+
+
+def add_notification_priority_to_jobs(uri):
+    client = MongoClient(uri)
+    db = client["mach5"]
+
+    db["job"].update_many(
+        {"notification_priority": {"$exists": False}},
+        {"$set": {"notification_priority": "standard"}}
+    )
