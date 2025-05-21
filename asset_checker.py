@@ -4,8 +4,14 @@ from bson import ObjectId
 import json
 from datetime import datetime
 import os.path
+import argparse
 
-def scan_missing_assets(uri):
+parser = argparse.ArgumentParser()
+parser.add_argument("--env", help="dev or prod", type=str, required=True, choices=["dev", "prod"])
+parser.add_argument("--cmd", help="command to run", type=str, required=True)
+args = parser.parse_args()
+
+def scan_missing_assets(uri, start_after_idx=0):
     """
     Phase 1: Scans all assets in the database, checks if the file exists in S3,
     and writes those without files to a JSON file.
@@ -36,7 +42,7 @@ def scan_missing_assets(uri):
         print(f"Found {total_assets} total assets to process")
         
         # Process in batches using skip/limit
-        skip = 0
+        skip = start_after_idx
         while True:
             # Get a batch of assets
             asset_batch = list(db["asset"].find().sort("created_at", -1).skip(skip).limit(batch_size))
@@ -74,6 +80,7 @@ def scan_missing_assets(uri):
                     print(f"[{total_count}] Missing asset {asset['_id']} - File not found at {url}")
                 else:
                     valid_count += 1
+                    print(f"[{total_count}] Valid asset {asset['_id']} - File found at {url}")
             
             # Print progress after each batch
             print(f"Progress: {total_count}/{total_assets} assets processed ({(total_count/total_assets)*100:.2f}%). Valid: {valid_count}, Missing: {missing_count}")
@@ -104,6 +111,7 @@ def scan_missing_assets(uri):
 def delete_missing_assets(uri, json_file_path):
     """
     Phase 2: Reads from the JSON file and deletes the specified assets from the database.
+    Processes deletions in batches of 100 for better performance.
     """
     if not os.path.exists(json_file_path):
         print(f"Error: JSON file '{json_file_path}' not found")
@@ -123,23 +131,45 @@ def delete_missing_assets(uri, json_file_path):
     with open(json_file_path, 'r') as f:
         assets_to_delete = json.load(f)
     
-    print(f"Found {len(assets_to_delete)} assets to delete")
+    total_assets = len(assets_to_delete)
+    print(f"Found {total_assets} assets to delete")
     
-    # Delete each asset
+    # Process in batches of 100
+    batch_size = 100
     deleted_count = 0
-    for idx, asset in enumerate(assets_to_delete, 1):
-        try:
-            asset_id = ObjectId(asset["id"])
-            result = db["asset"].delete_one({"_id": asset_id})
-            if result.deleted_count > 0:
-                deleted_count += 1
-                print(f"[{idx}] Deleted asset {asset_id}")
-            else:
-                print(f"[{idx}] Asset {asset_id} not found in database")
-        except Exception as e:
-            print(f"[{idx}] Error deleting asset {asset['id']}: {e}")
+    not_found_count = 0
+    error_count = 0
     
-    print(f"Deletion complete. Deleted {deleted_count} assets out of {len(assets_to_delete)}")
+    # Process assets in batches
+    for i in range(0, total_assets, batch_size):
+        batch = assets_to_delete[i:i+batch_size]
+        batch_ids = []
+        
+        # Convert string IDs to ObjectId for this batch
+        for asset in batch:
+            try:
+                batch_ids.append(ObjectId(asset["id"]))
+            except Exception as e:
+                print(f"Error converting ID {asset['id']}: {e}")
+                error_count += 1
+        
+        if batch_ids:
+            # Delete the batch
+            result = db["asset"].delete_many({"_id": {"$in": batch_ids}})
+            deleted_count += result.deleted_count
+            not_found_count += (len(batch_ids) - result.deleted_count)
+            
+            # Print progress
+            end_idx = min(i + batch_size, total_assets)
+            print(f"Batch {i//batch_size + 1}: Processed assets {i+1}-{end_idx} of {total_assets}")
+            print(f"  - Deleted: {result.deleted_count}, Not found: {len(batch_ids) - result.deleted_count}")
+    
+    print(f"\nDeletion complete:")
+    print(f"- Total assets processed: {total_assets}")
+    print(f"- Successfully deleted: {deleted_count}")
+    print(f"- Not found in database: {not_found_count}")
+    print(f"- Errors: {error_count}")
+    
     client.close()
     
     return deleted_count
@@ -147,14 +177,17 @@ def delete_missing_assets(uri, json_file_path):
 def format_asset_url(asset):
     """
     Formats the URL for the asset.
-    URL structure: https://dev.api.fiveincportal.com/assets/{parent_collection}/{parent_id}/{asset.asset_type}/{asset.id}
+    URL structure: https://api.fiveincportal.com/assets/{parent_collection}/{parent_id}/{asset.asset_type}/{asset.id}
     """
     parent_collection = asset["parent_collection"]
     parent_id = str(asset["parent_id"])
     asset_type = asset["asset_type"]
     asset_id = str(asset["_id"])
     
-    return f"https://dev.api.fiveincportal.com/assets/{parent_collection}/{parent_id}/{asset_type}/{asset_id}"
+    if args.env == "dev":
+        return f"https://dev.api.fiveincportal.com/assets/{parent_collection}/{parent_id}/{asset_type}/{asset_id}"
+    else:
+        return f"https://api.fiveincportal.com/assets/{parent_collection}/{parent_id}/{asset_type}/{asset_id}"
 
 def check_if_file_exists(url):
     """
@@ -173,7 +206,14 @@ def scan_assets(uri):
     """
     Phase 1 command: Scan all assets, identify those without S3 files, and write to JSON
     """
-    return scan_missing_assets(uri)
+    start_after_idx = input("Enter the index to start after: ")
+    try:
+        start_after_idx = int(start_after_idx)
+    except ValueError:
+        print("Invalid input. Please enter a valid integer.")
+        return
+    
+    return scan_missing_assets(uri, start_after_idx)
     
 def delete_assets(uri):
     """
