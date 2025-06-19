@@ -75,3 +75,15 @@ def add_preferences_to_account(uri):
         })
 
     client.close()
+
+
+def add_twilio_opted_out_to_account(uri):
+    client = MongoClient(uri)
+    db = client["mach5"]
+    
+    # Add twilio_opted_out field to all accounts, defaulting to False
+    result = db["account"].update_many({}, {"$set": {"twilio_opted_out": False}})
+    
+    print(f"Updated {result.modified_count} accounts with twilio_opted_out field")
+    
+    client.close()
