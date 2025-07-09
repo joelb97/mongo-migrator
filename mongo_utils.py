@@ -17,6 +17,7 @@ def reset_db(uri):
         "customer",
         "frame_design",
         "job",
+        "job_account",
         "job_shipment",
         "line_item",
         # "package",
